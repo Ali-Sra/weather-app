@@ -13,29 +13,24 @@ type LeafletNS = typeof import('leaflet');
   imports: [NgIf, NgFor, FormsModule, HttpClientModule, DecimalPipe, DatePipe],
   templateUrl: './app.html',
   styles: [`
-    .controls { display:flex; gap:.5rem; align-items:center; margin-bottom:1rem; }
-    .controls input { width: 260px; }
     .error { color:#b91c1c; }
+    .muted { color:#6b7280; }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; }
-    .card-header{ display:flex; justify-content:space-between; align-items:center; gap:1rem; }
-    .aqi { color:#111; padding: .25rem .5rem; border-radius:999px; font-weight:700; }
-    .now{ display:flex; gap:2rem; align-items:flex-start; }
-    .temp .t{ font-size:2rem; font-weight:700; }
-    .facts{ list-style:disc; padding-left:1.25rem; }
-    .wind .arrow{ display:inline-block; margin:0 .35rem; width:0;height:0;
-      border-left:6px solid transparent;border-right:6px solid transparent;
-      border-bottom:10px solid #111; }
-    .tabs nav{ display:flex; gap:.5rem; margin:.75rem 0 1rem; }
-    .tabs nav button{ border:1px solid #e5e7eb; padding:.35rem .6rem; border-radius:8px; background:#fff; }
-    .tabs nav button.active{ background:#111; color:#fff; }
-    .hours,.days{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:.5rem; }
+    .current-card { display:flex; gap:1rem; align-items:flex-start; position:relative; }
+    .current-left{ display:flex; gap:1rem; align-items:center; }
+    .aqi-pill{ position:absolute; right:1rem; top:1rem; padding:.25rem .6rem; border-radius:999px; color:#111; font-weight:700; }
+    .facts{ list-style:disc; padding-left:1.25rem; display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:.25rem .75rem; }
+    .arrow{ display:inline-block; margin:0 .35rem; width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #111; }
+    .tabs .tabbar{ display:flex; flex-wrap:wrap; gap:.5rem; margin:.75rem 0 1rem; }
+    .tabs .tabbar button{ border:1px solid #e5e7eb; padding:.35rem .6rem; border-radius:8px; background:#fff; }
+    .tabs .tabbar button.active{ background:#111; color:#fff; }
+    .hours,.days{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:.5rem; }
     .hour,.day{ border:1px solid #eee; border-radius:10px; padding:.5rem; text-align:center; }
     .map-wrap{ display:flex; flex-direction:column; gap:.5rem; }
     .map-toolbar{ display:flex; gap:.5rem; align-items:center; }
     .map{ height:420px; width:100%; border-radius:12px; border:1px solid #eee; }
-    .assistant-log{ margin-top:1rem; }
-    .assistant-log .you{ color:#2563eb; }
-    .assistant-log .assistant{ color:#16a34a; }
+    .topbar{ display:flex; justify-content:space-between; align-items:center; }
+    .searchbar{ display:flex; gap:.5rem; align-items:center; }
   `]
 })
 export class App implements OnInit {
@@ -62,18 +57,16 @@ export class App implements OnInit {
     { id:'precipitation_new', label:'Precipitation' },
   ];
 
-  // Minute
+  // Minute (OneCall اختیاری)
   minuteLoaded = signal(false);
 
-  // History (TimeMachine)
+  // History / DaySummary (اختیاری)
   historyDate: string = '';
   historyTime: string = '12:00';
-
-  // Day Summary
   summaryDate: string = '';
   summaryTz: string = '';
 
-  // Assistant
+  // Assistant (اختیاری)
   assistantInput: string = '';
   assistantLog: { role: 'you'|'assistant', text: string }[] = [];
 
@@ -105,8 +98,47 @@ export class App implements OnInit {
     const off = this.svc.tzOffset() || 0;
     return new Date((unixSec + off) * 1000);
   }
-  next24() {
-    return this.svc.onecall()?.hourly?.slice(0, 24) ?? [];
+
+  // ساعت‌های آینده از forecast (FREE)
+  hoursFromForecast() {
+    const f = this.svc.forecast();
+    if (!f?.list) return [];
+    return f.list.slice(0, 8).map((x: any) => ({
+      dt: x.dt,
+      temp: x.main?.temp,
+      wind_speed: x.wind?.speed,
+      pop: x.pop,
+      weather: x.weather
+    }));
+  }
+
+  // تجمیع روزانه از forecast (FREE)
+  dailyFromForecast() {
+    const f = this.svc.forecast();
+    if (!f?.list) return [];
+    const byDay: Record<string, any[]> = {};
+    const off = this.svc.tzOffset() || 0; // ثانیه
+    for (const it of f.list) {
+      const d = new Date((it.dt + off) * 1000);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()+1}-${d.getUTCDate()}`;
+      (byDay[key] ||= []).push(it);
+    }
+    return Object.values(byDay).slice(0, 5).map(arr => {
+      let min = Infinity, max = -Infinity, pop = 0;
+      for (const x of arr) {
+        const t = x.main?.temp;
+        if (t < min) min = t;
+        if (t > max) max = t;
+        pop = Math.max(pop, x.pop ?? 0);
+      }
+      const off2 = this.svc.tzOffset() || 0;
+      const atNoon = arr.find(x => {
+        const h = new Date((x.dt + off2) * 1000).getUTCHours();
+        return h === 12;
+      }) || arr[Math.floor(arr.length/2)];
+      const icon = atNoon?.weather?.[0]?.icon || '01d';
+      return { dt: arr[0].dt, temp: { min, max }, pop, weather: [{ icon }] };
+    });
   }
 
   // ---- Helper برای autocomplete شهر
@@ -121,24 +153,29 @@ export class App implements OnInit {
     this.svc.loading.set(true);
     this.svc.error.set(null);
 
+    // Current (FREE)
     this.svc.currentByName(city, this.units, this.lang).subscribe({
       next: w => {
         this.svc.current.set(w);
-        this.svc.tzOffset.set(w?.timezone ?? 0);
+        // برخی پاسخ‌ها timezone ندارند؛ بعداً از forecast هم ست می‌کنیم
+        if (typeof w?.timezone === 'number') this.svc.tzOffset.set(w.timezone);
 
         const lat = w?.coord?.lat, lon = w?.coord?.lon;
         if (lat != null && lon != null) {
+          // AQI (FREE)
           this.svc.airByCoords(lat, lon).subscribe({
             next: air => this.svc.aqi.set(air?.list?.[0]?.main?.aqi ?? null),
             error: () => {}
           });
+          // Optional: OneCall اگر دسترسی بود
           this.svc.oneCallByCoords(lat, lon, this.units, this.lang).subscribe({
-            next: oc => { 
-              this.svc.onecall.set(oc); 
-              this.svc.tzOffset.set(oc?.timezone_offset ?? this.svc.tzOffset()); 
+            next: oc => {
+              this.svc.onecall.set(oc);
+              if (typeof oc?.timezone_offset === 'number') this.svc.tzOffset.set(oc.timezone_offset);
             },
-            error: () => {}
+            error: () => { /* ignore - رایگان نیست */ }
           });
+          // نقشه
           if (this.tab === 'map') { this.ensureMap(lat, lon); }
         }
         this.svc.loading.set(false);
@@ -146,12 +183,17 @@ export class App implements OnInit {
       error: () => { this.svc.error.set('مشکل در دریافت اطلاعات'); this.svc.loading.set(false); }
     });
 
+    // Forecast (FREE)
     this.svc.forecast5ByName(city, this.units, this.lang).subscribe({
-      next: f => { this.svc.forecast.set(f); this.svc.tzOffset.set(f?.city?.timezone ?? this.svc.tzOffset()); },
+      next: f => {
+        this.svc.forecast.set(f);
+        const tz = f?.city?.timezone;
+        if (typeof tz === 'number') this.svc.tzOffset.set(tz);
+      },
       error: () => {}
     });
 
-    // geocode hints
+    // Geocode hints
     this.svc.geocode(city).subscribe({
       next: h => this.hints = h || [],
       error: () => {}
@@ -168,6 +210,7 @@ export class App implements OnInit {
       this.map.setView([lat, lon], this.map.getZoom() || 9);
     }
     if (this.tile) this.tile.remove();
+    // NOTE: tile endpoint ممکنه در پلن رایگان محدود باشه
     this.tile = L.tileLayer(`/api/tiles/${this.layer}/{z}/{x}/{y}.png`, {
       attribution: '&copy; OpenWeather &copy; OpenStreetMap'
     }).addTo(this.map);
@@ -182,7 +225,7 @@ export class App implements OnInit {
     if (this.tab === 'map' && c?.coord) this.ensureMap(c.coord.lat, c.coord.lon);
   }
 
-  // --- New Features
+  // --- Optional features (OneCall/AI)
   onOpenMinutely() {
     const c = this.svc.current();
     if (!c?.coord) return;
@@ -191,10 +234,10 @@ export class App implements OnInit {
     this.svc.loadMinute(c.coord.lat, c.coord.lon, this.units, this.lang).subscribe({
       next: oc => {
         this.svc.minute.set(oc?.minutely ?? null);
-        if (oc?.timezone_offset != null) this.svc.tzOffset.set(oc.timezone_offset);
+        if (typeof oc?.timezone_offset === 'number') this.svc.tzOffset.set(oc.timezone_offset);
         this.minuteLoaded.set(true);
       },
-      error: () => {}
+      error: () => { this.minuteLoaded.set(true); }
     });
   }
 

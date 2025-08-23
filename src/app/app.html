@@ -77,13 +77,15 @@
     </div>
   </section>
 
-  <!-- Tabs (visible when OneCall exists) -->
-  <section *ngIf="svc.onecall()" class="tabs card">
+  <!-- Tabs (FREE mode: بعد از current نشان بده) -->
+  <section *ngIf="svc.current()" class="tabs card">
     <nav class="tabbar">
       <button [class.active]="tab==='hourly'" (click)="tab='hourly'">۲۴ ساعت آینده</button>
-      <button [class.active]="tab==='daily'" (click)="tab='daily'">۷ روز آینده</button>
-      <button [class.active]="tab==='alerts'" (click)="tab='alerts'">هشدارها</button>
+      <button [class.active]="tab==='daily'" (click)="tab='daily'">۵ روز آینده</button>
       <button [class.active]="tab==='map'" (click)="openMapTab()">نقشه</button>
+
+      <!-- دکمه‌های اختیاری (OneCall/AI). می‌تونی پنهان کنی -->
+      <button [class.active]="tab==='alerts'" (click)="tab='alerts'">هشدارها</button>
       <button [class.active]="tab==='minutely'" (click)="onOpenMinutely()">دقیقه‌ای</button>
       <button [class.active]="tab==='history'" (click)="openHistoryTab()">تاریخی</button>
       <button [class.active]="tab==='summary'" (click)="openSummaryTab()">خلاصه روز</button>
@@ -91,20 +93,20 @@
       <button [class.active]="tab==='assistant'" (click)="openAssistantTab()">Assistant 🤖</button>
     </nav>
 
-    <!-- Hourly -->
+    <!-- Hourly از forecast -->
     <div *ngIf="tab==='hourly'" class="hours">
-      <div class="hour" *ngFor="let h of next24()">
+      <div class="hour" *ngFor="let h of hoursFromForecast()">
         <div class="time">{{ toCityDate(h.dt) | date:'HH:mm' }}</div>
         <img [src]="'https://openweathermap.org/img/wn/' + h.weather[0].icon + '.png'" alt="">
         <div class="t">{{ h.temp | number:'1.0-0' }} {{ unitSymbol() }}</div>
         <div class="pop" *ngIf="h.pop != null">💧 {{ (h.pop*100) | number:'1.0-0' }}%</div>
-        <div class="w">🌬 {{ h['wind_speed'] | number:'1.0-0' }} {{ units==='imperial' ? 'mph' : 'm/s' }}</div>
+        <div class="w">🌬 {{ h.wind_speed | number:'1.0-0' }} {{ units==='imperial' ? 'mph' : 'm/s' }}</div>
       </div>
     </div>
 
-    <!-- Daily -->
+    <!-- Daily از forecast -->
     <div *ngIf="tab==='daily'" class="days">
-      <div class="day" *ngFor="let d of svc.onecall().daily">
+      <div class="day" *ngFor="let d of dailyFromForecast()">
         <div class="date">{{ toCityDate(d.dt) | date:'EEE d MMM' }}</div>
         <img [src]="'https://openweathermap.org/img/wn/' + d.weather[0].icon + '.png'" alt="">
         <div class="t"><b>{{ d.temp.max | number:'1.0-0' }}°</b> / {{ d.temp.min | number:'1.0-0' }}°</div>
@@ -112,17 +114,21 @@
       </div>
     </div>
 
-    <!-- Alerts -->
+    <!-- Alerts (اختیاری) -->
     <div *ngIf="tab==='alerts'">
-      <p *ngIf="!svc.onecall().alerts?.length" class="muted">هشداری وجود ندارد.</p>
-      <div class="alert" *ngFor="let a of svc.onecall().alerts">
-        <h4>{{ a.event }}</h4>
-        <small class="muted">
-          {{ toCityDate(a.start) | date:'EEE d MMM, HH:mm' }} – {{ toCityDate(a.end) | date:'EEE d MMM, HH:mm' }}
-        </small>
-        <p>{{ a.description }}</p>
-        <div class="muted">Source: {{ a.sender_name }}</div>
-      </div>
+      <ng-container *ngIf="svc.onecall()?.alerts?.length; else noAlerts">
+        <div class="alert" *ngFor="let a of svc.onecall().alerts">
+          <h4>{{ a.event }}</h4>
+          <small class="muted">
+            {{ toCityDate(a.start) | date:'EEE d MMM, HH:mm' }} – {{ toCityDate(a.end) | date:'EEE d MMM, HH:mm' }}
+          </small>
+          <p>{{ a.description }}</p>
+          <div class="muted">Source: {{ a.sender_name }}</div>
+        </div>
+      </ng-container>
+      <ng-template #noAlerts>
+        <p class="muted">Alerts نیاز به One Call 3.0 دارد.</p>
+      </ng-template>
     </div>
 
     <!-- Map -->
@@ -136,7 +142,7 @@
       <div id="map" class="map"></div>
     </div>
 
-    <!-- Minutely -->
+    <!-- Minutely (اختیاری OneCall) -->
     <div *ngIf="tab==='minutely'" class="hours">
       <p *ngIf="!minuteLoaded()" class="muted">در حال دریافت…</p>
       <div class="hour" *ngFor="let m of svc.minute()">
@@ -146,7 +152,7 @@
       <p *ngIf="minuteLoaded() && (!svc.minute() || !svc.minute()!.length)" class="muted">داده‌ای نیست.</p>
     </div>
 
-    <!-- History -->
+    <!-- History (اختیاری OneCall) -->
     <div *ngIf="tab==='history'">
       <div class="searchbar" style="margin:.5rem 0">
         <input type="date" [(ngModel)]="historyDate">
@@ -162,16 +168,17 @@
           <div>{{ d.weather?.[0]?.description }}</div>
         </div>
       </div>
+      <p *ngIf="!svc.history()" class="muted">Timemachine نیاز به One Call 3.0 دارد.</p>
     </div>
 
-    <!-- Day Summary -->
+    <!-- Day Summary (اختیاری OneCall) -->
     <div *ngIf="tab==='summary'">
       <div class="searchbar" style="margin:.5rem 0">
         <input type="date" [(ngModel)]="summaryDate">
         <input placeholder="+02:00 (اختیاری)" [(ngModel)]="summaryTz" style="width:120px">
         <button (click)="onLoadDaySummary()">نمایش</button>
       </div>
-      <div *ngIf="svc.daySummary() as S" class="days">
+      <div *ngIf="svc.daySummary() as S; else noSummary" class="days">
         <div class="day"><b>Min/Max</b>
           <div>{{ S.temperature?.min | number:'1.0-1' }} / {{ S.temperature?.max | number:'1.0-1' }} {{ unitSymbol() }}</div>
         </div>
@@ -184,17 +191,19 @@
           <div>{{ S.wind?.max?.speed }} {{ units==='imperial' ? 'mph' : 'm/s' }} ({{ S.wind?.max?.direction }}°)</div>
         </div>
       </div>
+      <ng-template #noSummary><p class="muted">Day Summary نیاز به One Call 3.0 دارد.</p></ng-template>
     </div>
 
     <!-- Overview (AI) -->
     <div *ngIf="tab==='overview'">
-      <p *ngIf="!svc.overview()" class="muted">در حال دریافت…</p>
+      <p *ngIf="!svc.overview()" class="muted">Overview (AI) نیاز به دسترسی دارد.</p>
       <pre *ngIf="svc.overview()" style="white-space:pre-wrap">{{ svc.overview() }}</pre>
     </div>
 
     <!-- Assistant -->
     <div *ngIf="tab==='assistant'">
       <h3>AI Weather Assistant</h3>
+      <p class="muted" *ngIf="!svc.assistantSessionId()">برای استفاده نیاز به API Assistant است.</p>
       <div class="searchbar" style="margin:.5rem 0">
         <input [(ngModel)]="assistantInput" placeholder="Ask about the weather…" style="flex:1">
         <button (click)="onAssistantSend()">Send</button>
