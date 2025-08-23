@@ -40,3 +40,20 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
+# Angular
+/dist
+/.angular/cache
+
+# Node (frontend & server)
+node_modules/
+server/node_modules/
+
+# Env & local
+.env
+server/.env
+*.log
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
