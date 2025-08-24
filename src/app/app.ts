@@ -1,37 +1,18 @@
+// src/app/app.ts
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { NgIf, NgFor, DecimalPipe, DatePipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClientModule } from '@angular/common/http';
 import { WeatherService } from './services/weather.service';
 
-// فقط برای type ها (لود واقعی را داینامیک می‌کنیم)
+// برای تایپ Leaflet (lazy import)
 type LeafletNS = typeof import('leaflet');
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule, HttpClientModule, DecimalPipe, DatePipe],
+  imports: [CommonModule, FormsModule],
   templateUrl: './app.html',
-  styles: [`
-    .error { color:#b91c1c; }
-    .muted { color:#6b7280; }
-    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; }
-    .current-card { display:flex; gap:1rem; align-items:flex-start; position:relative; }
-    .current-left{ display:flex; gap:1rem; align-items:center; }
-    .aqi-pill{ position:absolute; right:1rem; top:1rem; padding:.25rem .6rem; border-radius:999px; color:#111; font-weight:700; }
-    .facts{ list-style:disc; padding-left:1.25rem; display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:.25rem .75rem; }
-    .arrow{ display:inline-block; margin:0 .35rem; width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #111; }
-    .tabs .tabbar{ display:flex; flex-wrap:wrap; gap:.5rem; margin:.75rem 0 1rem; }
-    .tabs .tabbar button{ border:1px solid #e5e7eb; padding:.35rem .6rem; border-radius:8px; background:#fff; }
-    .tabs .tabbar button.active{ background:#111; color:#fff; }
-    .hours,.days{ display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:.5rem; }
-    .hour,.day{ border:1px solid #eee; border-radius:10px; padding:.5rem; text-align:center; }
-    .map-wrap{ display:flex; flex-direction:column; gap:.5rem; }
-    .map-toolbar{ display:flex; gap:.5rem; align-items:center; }
-    .map{ height:420px; width:100%; border-radius:12px; border:1px solid #eee; }
-    .topbar{ display:flex; justify-content:space-between; align-items:center; }
-    .searchbar{ display:flex; gap:.5rem; align-items:center; }
-  `]
+  styleUrls: ['./app.scss']   // استایل‌ها فقط اینجاست، هیچ styles: [...] این‌جا نداریم
 })
 export class App implements OnInit {
   svc = inject(WeatherService);
@@ -82,13 +63,13 @@ export class App implements OnInit {
     return ['—', 'Good', 'Fair', 'Moderate', 'Poor', 'Very Poor'][aqi] ?? '—';
   }
   aqiColor(aqi: number) {
-    switch (aqi) { 
-      case 1: return '#22c55e'; 
+    switch (aqi) {
+      case 1: return '#22c55e';
       case 2: return '#84cc16';
-      case 3: return '#facc15'; 
-      case 4: return '#f59e0b'; 
-      case 5: return '#ef4444'; 
-      default: return '#a3a3a3'; 
+      case 3: return '#facc15';
+      case 4: return '#f59e0b';
+      case 5: return '#ef4444';
+      default: return '#a3a3a3';
     }
   }
   windDeg() { return this.svc.current()?.wind?.deg ?? 0; }
@@ -203,7 +184,7 @@ export class App implements OnInit {
   // --- Map
   async ensureMap(lat: number, lon: number) {
     if (!this.L) this.L = await import('leaflet');
-    const L = this.L;
+    const L = this.L!;
     if (!this.map) {
       this.map = L.map('map', { zoomControl: true }).setView([lat, lon], 9);
     } else {
